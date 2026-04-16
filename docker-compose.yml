@@ -22,7 +22,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-grocery_tracker}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3010}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://192.168.70.2:3011}
     depends_on:
       db:
         condition: service_healthy
@@ -46,7 +46,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "3010:3000"
+      - "3011:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/today').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 20s
