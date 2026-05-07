@@ -183,7 +183,8 @@ def update_unit(unit_id: int, payload: UnitCreate, db: Session = Depends(get_db)
 
 @app.get("/products", response_model=list[ProductRead])
 def list_products(db: Session = Depends(get_db)):
-    return db.scalars(select(Product).order_by(Product.name)).all()
+    products = db.scalars(select(Product).order_by(Product.name)).all()
+    return [serialize_product(db, product) for product in products]
 
 
 @app.post("/products", response_model=ProductRead)
@@ -191,7 +192,7 @@ def create_product(payload: ProductCreate, db: Session = Depends(get_db)):
     product = upsert_product_by_name(db, payload.name, payload.unit, payload.category, payload.notes)
     db.commit()
     db.refresh(product)
-    return product
+    return serialize_product(db, product)
 
 
 @app.put("/products/{product_id}", response_model=ProductRead)
@@ -212,7 +213,7 @@ def update_product(product_id: int, payload: ProductCreate, db: Session = Depend
     ensure_category_exists(db, product.category)
     db.commit()
     db.refresh(product)
-    return product
+    return serialize_product(db, product)
 
 
 @app.get("/dishes", response_model=list[DishRead])
@@ -699,6 +700,28 @@ def get_monthly_report(month: str = Query(..., description="YYYY-MM"), db: Sessi
     )
 
 
+def get_last_unit_price(db: Session, product_id: int) -> Optional[Decimal]:
+    latest_item = db.scalar(
+        select(PurchaseItem)
+        .join(Purchase, Purchase.id == PurchaseItem.purchase_id)
+        .where(PurchaseItem.product_id == product_id)
+        .order_by(Purchase.purchased_on.desc(), PurchaseItem.id.desc())
+        .limit(1)
+    )
+    return latest_item.unit_price if latest_item else None
+
+
+def serialize_product(db: Session, product: Product) -> ProductRead:
+    return ProductRead(
+        id=product.id,
+        name=product.name,
+        unit=product.unit,
+        category=product.category,
+        notes=product.notes,
+        last_unit_price=get_last_unit_price(db, product.id),
+    )
+
+
 def serialize_dish(dish: Dish) -> DishRead:
     return DishRead(
         id=dish.id,
@@ -708,7 +731,7 @@ def serialize_dish(dish: Dish) -> DishRead:
         ingredients=[
             DishIngredientRead(
                 id=ingredient.id,
-                product_id=ingredient.product_id,
+                product_id=product.id,
                 product_name=ingredient.product.name,
                 quantity=ingredient.quantity,
                 optional=ingredient.optional,
@@ -866,23 +889,33 @@ def clear_purchase_items(db: Session, purchase: Purchase) -> None:
         db.flush()
 
 
+def resolve_ingredient_product(db: Session, ingredient) -> Product:
+    if getattr(ingredient, "product_id", None):
+        product = db.get(Product, ingredient.product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product {ingredient.product_id} not found")
+        return product
+    product_name = getattr(ingredient, "product_name", None)
+    if not product_name:
+        raise HTTPException(status_code=400, detail="Each ingredient needs a product")
+    return upsert_product_by_name(db, product_name, unit="unit", category="general")
+
+
 def replace_meal_ingredients(db: Session, meal: Meal, ingredients_payload) -> None:
     if not ingredients_payload:
         raise HTTPException(status_code=400, detail="At least one ingredient is required")
     for ingredient in ingredients_payload:
-        product = db.get(Product, ingredient.product_id)
-        if not product:
-            raise HTTPException(status_code=404, detail=f"Product {ingredient.product_id} not found")
+        product = resolve_ingredient_product(db, ingredient)
         meal_ingredient = MealIngredient(
             meal_id=meal.id,
-            product_id=ingredient.product_id,
+            product_id=product.id,
             quantity=ingredient.quantity,
         )
         db.add(meal_ingredient)
         db.flush()
         db.add(
             ProductEvent(
-                product_id=ingredient.product_id,
+                product_id=product.id,
                 occurred_on=meal.occurred_on,
                 event_type="consume",
                 quantity_delta=-Decimal(ingredient.quantity),
@@ -907,13 +940,11 @@ def _replace_dish_ingredients(db: Session, dish: Dish, ingredients_payload) -> N
     db.query(DishIngredient).filter(DishIngredient.dish_id == dish.id).delete(synchronize_session=False)
     db.flush()
     for ingredient in ingredients_payload:
-        product = db.get(Product, ingredient.product_id)
-        if not product:
-            raise HTTPException(status_code=404, detail=f"Product {ingredient.product_id} not found")
+        product = resolve_ingredient_product(db, ingredient)
         db.add(
             DishIngredient(
                 dish_id=dish.id,
-                product_id=ingredient.product_id,
+                product_id=product.id,
                 quantity=ingredient.quantity,
                 optional=ingredient.optional,
             )

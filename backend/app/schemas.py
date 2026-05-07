@@ -36,11 +36,13 @@ class ProductCreate(BaseModel):
 
 class ProductRead(ProductCreate):
     id: int
+    last_unit_price: Optional[Decimal] = None
     model_config = ConfigDict(from_attributes=True)
 
 
 class DishIngredientInput(BaseModel):
-    product_id: int
+    product_id: Optional[int] = None
+    product_name: Optional[str] = None
     quantity: Decimal = Decimal("1")
     optional: bool = False
 
@@ -103,7 +105,8 @@ class PurchaseRead(BaseModel):
 
 
 class MealIngredientInput(BaseModel):
-    product_id: int
+    product_id: Optional[int] = None
+    product_name: Optional[str] = None
     quantity: Decimal = Decimal("1")
 
 

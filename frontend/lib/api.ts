@@ -1,4 +1,4 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
+export const API_BASE_URL = '/api';
 
 export type Category = {
   id: number;
@@ -16,11 +16,12 @@ export type Product = {
   unit: string;
   category: string;
   notes?: string | null;
+  last_unit_price?: number | null;
 };
 
 export type DishIngredient = {
   id?: number;
-  product_id: number;
+  product_id?: number | null;
   product_name?: string;
   quantity: number;
   optional: boolean;
@@ -55,7 +56,7 @@ export type Purchase = {
 
 export type MealIngredient = {
   id?: number;
-  product_id: number;
+  product_id?: number | null;
   product_name?: string;
   quantity: number;
 };

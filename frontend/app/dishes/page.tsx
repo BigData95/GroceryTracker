@@ -4,9 +4,10 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/Card';
 import { api, Dish, DishIngredient, Product } from '@/lib/api';
 
-function emptyIngredient(products: Product[]): DishIngredient {
+function emptyIngredient(): DishIngredient {
   return {
-    product_id: products[0]?.id || 0,
+    product_id: null,
+    product_name: '',
     quantity: 1,
     optional: false
   };
@@ -28,9 +29,7 @@ export default function DishesPage() {
       const [productsData, dishesData] = await Promise.all([api.getProducts(), api.getDishes()]);
       setProducts(productsData);
       setDishes(dishesData);
-      if (!ingredients.length) {
-        setIngredients([emptyIngredient(productsData)]);
-      }
+      setIngredients((current) => (current.length ? current : [emptyIngredient()]));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dishes');
     }
@@ -52,7 +51,8 @@ export default function DishesPage() {
     setNotes(selectedDish.notes || '');
     setIngredients(
       selectedDish.ingredients.map((ingredient) => ({
-        product_id: ingredient.product_id,
+        product_id: ingredient.product_id ?? null,
+        product_name: ingredient.product_name || '',
         quantity: Number(ingredient.quantity),
         optional: ingredient.optional
       }))
@@ -64,15 +64,19 @@ export default function DishesPage() {
     setName('');
     setCategory('dinner');
     setNotes('');
-    setIngredients([emptyIngredient(products)]);
+    setIngredients([emptyIngredient()]);
   }
 
   function updateIngredient(index: number, patch: Partial<DishIngredient>) {
-    setIngredients((current) =>
-      current.map((ingredient, idx) =>
-        idx === index ? { ...ingredient, ...patch } : ingredient
-      )
-    );
+    setIngredients((current) => current.map((ingredient, idx) => (idx === index ? { ...ingredient, ...patch } : ingredient)));
+  }
+
+  function updateIngredientProduct(index: number, value: string) {
+    const match = products.find((product) => product.name.toLowerCase() === value.trim().toLowerCase());
+    updateIngredient(index, {
+      product_name: value,
+      product_id: match?.id || null
+    });
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -84,7 +88,7 @@ export default function DishesPage() {
         name,
         category,
         notes,
-        ingredients: ingredients.filter((ingredient) => ingredient.product_id)
+        ingredients: ingredients.filter((ingredient) => ingredient.product_id || ingredient.product_name?.trim())
       };
 
       if (selectedDishId) {
@@ -106,6 +110,12 @@ export default function DishesPage() {
     <main className="page">
       {message ? <div className="notice">{message}</div> : null}
       {error ? <div className="error">{error}</div> : null}
+
+      <datalist id="product-options">
+        {products.map((product) => (
+          <option key={product.id} value={product.name} />
+        ))}
+      </datalist>
 
       <div className="page-grid">
         <Card>
@@ -151,66 +161,65 @@ export default function DishesPage() {
             </div>
 
             <div className="list" style={{ marginTop: 12 }}>
-              {ingredients.map((ingredient, index) => (
-                <div className="list-item" key={index}>
-                  <div className="form-grid three">
-                    <div className="form-field">
-                      <label>Ingredient</label>
-                      <select
-                        className="select"
-                        value={ingredient.product_id}
-                        onChange={(e) => updateIngredient(index, { product_id: Number(e.target.value) })}
-                      >
-                        {products.map((product) => (
-                          <option key={product.id} value={product.id}>
-                            {product.name}
-                          </option>
-                        ))}
-                      </select>
+              {ingredients.map((ingredient, index) => {
+                const product = ingredient.product_id
+                  ? products.find((entry) => entry.id === ingredient.product_id)
+                  : products.find((entry) => entry.name.toLowerCase() === (ingredient.product_name || '').trim().toLowerCase());
+                const ingredientName = ingredient.product_name || product?.name || '';
+                return (
+                  <div className="list-item" key={`${ingredientName || 'ingredient'}-${index}`}>
+                    <div className="form-grid three">
+                      <div className="form-field">
+                        <label>Ingredient</label>
+                        <input
+                          className="input"
+                          list="product-options"
+                          value={ingredientName}
+                          onChange={(e) => updateIngredientProduct(index, e.target.value)}
+                          placeholder="Type to autocomplete"
+                        />
+                      </div>
+                      <div className="form-field">
+                        <label>Quantity ({product?.unit || 'unit'})</label>
+                        <input
+                          className="input"
+                          type="number"
+                          step="0.01"
+                          value={ingredient.quantity}
+                          onChange={(e) => updateIngredient(index, { quantity: Number(e.target.value) })}
+                        />
+                      </div>
+                      <div className="form-field">
+                        <label>Optional</label>
+                        <select
+                          className="select"
+                          value={ingredient.optional ? 'yes' : 'no'}
+                          onChange={(e) => updateIngredient(index, { optional: e.target.value === 'yes' })}
+                        >
+                          <option value="no">Required</option>
+                          <option value="yes">Optional</option>
+                        </select>
+                      </div>
                     </div>
-                    <div className="form-field">
-                      <label>Quantity</label>
-                      <input
-                        className="input"
-                        type="number"
-                        step="0.01"
-                        value={ingredient.quantity}
-                        onChange={(e) => updateIngredient(index, { quantity: Number(e.target.value) })}
-                      />
-                    </div>
-                    <div className="form-field">
-                      <label>Optional</label>
-                      <select
-                        className="select"
-                        value={ingredient.optional ? 'yes' : 'no'}
-                        onChange={(e) => updateIngredient(index, { optional: e.target.value === 'yes' })}
+                    <div className="actions">
+                      {!ingredient.product_id && ingredientName.trim() ? (
+                        <span className="pill">New ingredient will be created</span>
+                      ) : null}
+                      <button
+                        className="button danger"
+                        type="button"
+                        onClick={() => setIngredients((current) => current.filter((_, idx) => idx !== index))}
                       >
-                        <option value="no">Required</option>
-                        <option value="yes">Optional</option>
-                      </select>
+                        Remove ingredient
+                      </button>
                     </div>
                   </div>
-                  <div className="actions">
-                    <button
-                      className="button danger"
-                      type="button"
-                      onClick={() =>
-                        setIngredients((current) => current.filter((_, idx) => idx !== index))
-                      }
-                    >
-                      Remove ingredient
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="actions">
-              <button
-                className="button secondary"
-                type="button"
-                onClick={() => setIngredients((current) => [...current, emptyIngredient(products)])}
-              >
+              <button className="button secondary" type="button" onClick={() => setIngredients((current) => [...current, emptyIngredient()])}>
                 Add ingredient
               </button>
               <button className="button" type="submit">

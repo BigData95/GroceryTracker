@@ -44,9 +44,18 @@ function roundMoney(value: number) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 }
 
+function emptyMealIngredient(): MealIngredient {
+  return {
+    product_id: null,
+    product_name: '',
+    quantity: 1
+  };
+}
+
 function ingredientFromDish(ingredient: DishIngredient): MealIngredient {
   return {
-    product_id: ingredient.product_id,
+    product_id: ingredient.product_id ?? null,
+    product_name: ingredient.product_name || '',
     quantity: Number(ingredient.quantity)
   };
 }
@@ -215,7 +224,7 @@ export default function TodayPage() {
         name_snapshot: mealName || selectedDish?.name || 'Custom meal',
         category_snapshot: mealCategory || selectedDish?.category || 'dinner',
         note: mealNote,
-        ingredients: mealIngredients.filter((ingredient) => ingredient.product_id)
+        ingredients: mealIngredients.filter((ingredient) => ingredient.product_id || ingredient.product_name?.trim())
       };
 
       if (editingMealId) {
@@ -249,7 +258,8 @@ export default function TodayPage() {
       product_name: value,
       product_id: match?.id || null,
       unit: match?.unit || defaultUnit,
-      category: match?.category || defaultCategory
+      category: match?.category || defaultCategory,
+      ...(match ? { unit_price: Number(match.last_unit_price ?? 0) } : {})
     });
   }
 
@@ -257,6 +267,15 @@ export default function TodayPage() {
     setMealIngredients((current) =>
       current.map((ingredient, idx) => (idx === index ? { ...ingredient, ...patch } : ingredient))
     );
+  }
+
+
+  function updateMealIngredientProduct(index: number, value: string) {
+    const match = products.find((product) => product.name.toLowerCase() === value.trim().toLowerCase());
+    updateMealIngredient(index, {
+      product_name: value,
+      product_id: match?.id || null
+    });
   }
 
   function hydrateDish(dishId: number | '') {
@@ -296,6 +315,7 @@ export default function TodayPage() {
     setMealIngredients(
       meal.ingredients.map((ingredient) => ({
         product_id: ingredient.product_id,
+        product_name: ingredient.product_name || '',
         quantity: Number(ingredient.quantity)
       }))
     );
@@ -410,6 +430,7 @@ export default function TodayPage() {
                             type="number"
                             step="0.01"
                             value={item.unit_price}
+                            onFocus={(e) => e.currentTarget.select()}
                             onChange={(e) => updatePurchaseItem(index, { unit_price: Number(e.target.value) })}
                           />
                         </div>
@@ -532,23 +553,22 @@ export default function TodayPage() {
 
               <div className="list" style={{ marginTop: 12 }}>
                 {mealIngredients.map((ingredient, index) => {
-                  const product = products.find((entry) => entry.id === ingredient.product_id);
+                  const product = ingredient.product_id
+                    ? products.find((entry) => entry.id === ingredient.product_id)
+                    : products.find((entry) => entry.name.toLowerCase() === (ingredient.product_name || '').trim().toLowerCase());
+                  const ingredientName = ingredient.product_name || product?.name || '';
                   return (
-                    <div className="list-item" key={`${ingredient.product_id}-${index}`}>
+                    <div className="list-item" key={`${ingredientName || 'ingredient'}-${index}`}>
                       <div className="form-grid three">
                         <div className="form-field">
                           <label>Ingredient</label>
-                          <select
-                            className="select"
-                            value={ingredient.product_id}
-                            onChange={(e) => updateMealIngredient(index, { product_id: Number(e.target.value) })}
-                          >
-                            {products.map((productOption) => (
-                              <option key={productOption.id} value={productOption.id}>
-                                {productOption.name}
-                              </option>
-                            ))}
-                          </select>
+                          <input
+                            className="input"
+                            list="product-options"
+                            value={ingredientName}
+                            onChange={(e) => updateMealIngredientProduct(index, e.target.value)}
+                            placeholder="Type to autocomplete"
+                          />
                         </div>
                         <div className="form-field">
                           <label>Quantity ({product?.unit || 'unit'})</label>
@@ -570,6 +590,9 @@ export default function TodayPage() {
                           </button>
                         </div>
                       </div>
+                      {!ingredient.product_id && ingredientName.trim() ? (
+                        <div className="muted small">New ingredient will be created with default unit/category.</div>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -580,7 +603,7 @@ export default function TodayPage() {
                   className="button secondary"
                   type="button"
                   onClick={() =>
-                    setMealIngredients((current) => [...current, { product_id: products[0]?.id || 0, quantity: 1 }])
+                    setMealIngredients((current) => [...current, emptyMealIngredient()])
                   }
                 >
                   Add ingredient
