@@ -731,12 +731,18 @@ def serialize_dish(dish: Dish) -> DishRead:
         ingredients=[
             DishIngredientRead(
                 id=ingredient.id,
-                product_id=product.id,
-                product_name=ingredient.product.name,
+                product_id=ingredient.product_id,
+                product_name=ingredient.product.name if ingredient.product else None,
                 quantity=ingredient.quantity,
                 optional=ingredient.optional,
             )
-            for ingredient in sorted(dish.ingredients, key=lambda item: (item.optional, item.product.name.lower()))
+            for ingredient in sorted(
+                dish.ingredients,
+                key=lambda item: (
+                    item.optional,
+                    item.product.name.lower() if item.product else ""
+                ),
+            )
         ],
     )
 
